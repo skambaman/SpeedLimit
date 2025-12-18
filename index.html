@@ -16,6 +16,9 @@
             height: 100vh;
             margin: 0;
             text-align: center;
+            /* Prevent text selection while driving */
+            user-select: none;
+            -webkit-user-select: none; 
         }
 
         .speed-container {
@@ -30,6 +33,7 @@
             background: white;
             color: black;
             box-shadow: 0 0 30px rgba(255, 59, 48, 0.3);
+            cursor: pointer; /* Hint that it's clickable */
         }
 
         .label {
@@ -65,39 +69,48 @@
             color: #444;
             margin-top: 10px;
         }
+
+        /* Wake Lock Status Indicator */
+        .wake-status {
+            margin-top: 15px;
+            font-size: 0.8rem;
+            color: #4cd964; /* iOS Green */
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+        .wake-status.active {
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
 
-    <div class="speed-container">
+    <div class="speed-container" onclick="requestWakeLock()">
         <div class="label">Limit</div>
         <div class="limit" id="limitDisplay">--</div>
         <div class="unit">MPH</div>
     </div>
 
     <div class="status" id="statusMsg">Waiting for GPS...</div>
+    <div class="wake-status" id="wakeMsg">⚡ Screen Awake Active</div>
     <div class="debug" id="debugMsg"></div>
 
     <script>
         const limitDisplay = document.getElementById('limitDisplay');
         const statusMsg = document.getElementById('statusMsg');
         const debugMsg = document.getElementById('debugMsg');
+        const wakeMsg = document.getElementById('wakeMsg');
+
+        // --- SPEED LIMIT LOGIC ---
 
         let lastFetchTime = 0;
-        const MIN_FETCH_INTERVAL = 5000; // Only fetch every 5 seconds max
+        const MIN_FETCH_INTERVAL = 5000; 
 
-        // UK Default Fallbacks (same logic as C# version)
         const highwayDefaults = {
-            "motorway": 70,
-            "motorway_link": 70,
-            "trunk": 60,
-            "primary": 60,
-            "secondary": 60,
-            "tertiary": 30,
-            "unclassified": 60,
-            "residential": 30,
-            "living_street": 20,
-            "service": 10
+            "motorway": 70, "motorway_link": 70,
+            "trunk": 60, "primary": 60, "secondary": 60,
+            "tertiary": 30, "unclassified": 60,
+            "residential": 30, "living_street": 20, "service": 10
         };
 
         function updateSpeedLimit(lat, lon) {
@@ -107,7 +120,6 @@
 
             statusMsg.textContent = "Updating...";
             
-            // Query 15m radius to be safe for GPS drift
             const query = `[out:json];way(around:15,${lat},${lon})["highway"];out tags;`;
             const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
 
@@ -120,13 +132,8 @@
                         return;
                     }
 
-                    // 1. Priority: Look for explicit maxspeed
-                    let road = data.elements.find(e => e.tags.maxspeed);
-                    
-                    // 2. Fallback: Look for any highway tag to infer speed
-                    if (!road) {
-                        road = data.elements[0]; // Take the closest one
-                    }
+                    // Priority: Explicit Maxspeed > Implicit Highway Type
+                    let road = data.elements.find(e => e.tags.maxspeed) || data.elements[0];
 
                     if (road.tags.maxspeed) {
                         const speed = parseMaxSpeed(road.tags.maxspeed);
@@ -147,7 +154,6 @@
         }
 
         function parseMaxSpeed(speedStr) {
-            // Remove "mph" or " mph" and return integer
             return parseInt(speedStr.toLowerCase().replace("mph", "").trim());
         }
 
@@ -155,7 +161,8 @@
             limitDisplay.textContent = val;
         }
 
-        // HTML5 Geolocation Watcher
+        // --- GPS LOGIC ---
+
         if ("geolocation" in navigator) {
             navigator.geolocation.watchPosition(
                 (position) => {
@@ -165,7 +172,6 @@
 
                     debugMsg.textContent = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)} (±${Math.round(acc)}m)`;
                     
-                    // Only update if accuracy is decent (under 50m) to avoid jumping around
                     if (acc < 50) {
                         updateSpeedLimit(lat, lon);
                     } else {
@@ -173,18 +179,49 @@
                     }
                 },
                 (error) => {
-                    statusMsg.textContent = "GPS Access Denied/Error";
-                    console.error("Geo Error:", error);
+                    statusMsg.textContent = "GPS Access Denied";
                 },
-                {
-                    enableHighAccuracy: true,
-                    maximumAge: 10000,
-                    timeout: 5000
-                }
+                { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
             );
         } else {
-            statusMsg.textContent = "Geolocation not supported by this browser.";
+            statusMsg.textContent = "Geolocation not supported.";
         }
+
+        // --- WAKE LOCK LOGIC ---
+
+        let wakeLock = null;
+
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeMsg.classList.add('active'); // Show green text
+                    
+                    // Listener to reset lock if user minimizes/switches tabs and comes back
+                    wakeLock.addEventListener('release', () => {
+                        wakeMsg.classList.remove('active');
+                        console.log('Wake Lock released');
+                    });
+                    console.log('Wake Lock active');
+                } catch (err) {
+                    console.error(`${err.name}, ${err.message}`);
+                    wakeMsg.textContent = "Wake Lock Failed";
+                }
+            } else {
+                wakeMsg.textContent = "Wake Lock Not Supported";
+            }
+        }
+
+        // Handle visibility change (re-acquire lock when app comes back to foreground)
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        });
+
+        // Try to acquire lock immediately on load
+        requestWakeLock();
+
     </script>
 </body>
 </html>
