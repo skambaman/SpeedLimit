@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Speed Limit</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            text-align: center;
+        }
+
+        .speed-container {
+            border: 8px solid #ff3b30; /* Traffic Red */
+            border-radius: 50%;
+            width: 280px;
+            height: 280px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            color: black;
+            box-shadow: 0 0 30px rgba(255, 59, 48, 0.3);
+        }
+
+        .label {
+            font-size: 1.2rem;
+            text-transform: uppercase;
+            font-weight: bold;
+            color: #555;
+            margin-bottom: -10px;
+        }
+
+        .limit {
+            font-size: 8rem;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .unit {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #555;
+            margin-top: 5px;
+        }
+
+        .status {
+            margin-top: 40px;
+            font-size: 0.9rem;
+            color: #888;
+            padding: 0 20px;
+        }
+
+        .debug {
+            font-size: 0.7rem;
+            color: #444;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="speed-container">
+        <div class="label">Limit</div>
+        <div class="limit" id="limitDisplay">--</div>
+        <div class="unit">MPH</div>
+    </div>
+
+    <div class="status" id="statusMsg">Waiting for GPS...</div>
+    <div class="debug" id="debugMsg"></div>
+
+    <script>
+        const limitDisplay = document.getElementById('limitDisplay');
+        const statusMsg = document.getElementById('statusMsg');
+        const debugMsg = document.getElementById('debugMsg');
+
+        let lastFetchTime = 0;
+        const MIN_FETCH_INTERVAL = 5000; // Only fetch every 5 seconds max
+
+        // UK Default Fallbacks (same logic as C# version)
+        const highwayDefaults = {
+            "motorway": 70,
+            "motorway_link": 70,
+            "trunk": 60,
+            "primary": 60,
+            "secondary": 60,
+            "tertiary": 30,
+            "unclassified": 60,
+            "residential": 30,
+            "living_street": 20,
+            "service": 10
+        };
+
+        function updateSpeedLimit(lat, lon) {
+            const now = Date.now();
+            if (now - lastFetchTime < MIN_FETCH_INTERVAL) return;
+            lastFetchTime = now;
+
+            statusMsg.textContent = "Updating...";
+            
+            // Query 15m radius to be safe for GPS drift
+            const query = `[out:json];way(around:15,${lat},${lon})["highway"];out tags;`;
+            const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.elements || data.elements.length === 0) {
+                        displayLimit("?");
+                        statusMsg.textContent = "Unknown Road";
+                        return;
+                    }
+
+                    // 1. Priority: Look for explicit maxspeed
+                    let road = data.elements.find(e => e.tags.maxspeed);
+                    
+                    // 2. Fallback: Look for any highway tag to infer speed
+                    if (!road) {
+                        road = data.elements[0]; // Take the closest one
+                    }
+
+                    if (road.tags.maxspeed) {
+                        const speed = parseMaxSpeed(road.tags.maxspeed);
+                        displayLimit(speed);
+                        statusMsg.textContent = "Source: Signage";
+                    } else if (road.tags.highway && highwayDefaults[road.tags.highway]) {
+                        displayLimit(highwayDefaults[road.tags.highway]);
+                        statusMsg.textContent = `Source: Default (${road.tags.highway})`;
+                    } else {
+                        displayLimit("?");
+                        statusMsg.textContent = "No Data";
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    statusMsg.textContent = "API Error";
+                });
+        }
+
+        function parseMaxSpeed(speedStr) {
+            // Remove "mph" or " mph" and return integer
+            return parseInt(speedStr.toLowerCase().replace("mph", "").trim());
+        }
+
+        function displayLimit(val) {
+            limitDisplay.textContent = val;
+        }
+
+        // HTML5 Geolocation Watcher
+        if ("geolocation" in navigator) {
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    const acc = position.coords.accuracy;
+
+                    debugMsg.textContent = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)} (±${Math.round(acc)}m)`;
+                    
+                    // Only update if accuracy is decent (under 50m) to avoid jumping around
+                    if (acc < 50) {
+                        updateSpeedLimit(lat, lon);
+                    } else {
+                        statusMsg.textContent = "GPS Accuracy Low";
+                    }
+                },
+                (error) => {
+                    statusMsg.textContent = "GPS Access Denied/Error";
+                    console.error("Geo Error:", error);
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 10000,
+                    timeout: 5000
+                }
+            );
+        } else {
+            statusMsg.textContent = "Geolocation not supported by this browser.";
+        }
+    </script>
+</body>
+</html>
