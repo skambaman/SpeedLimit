@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Speed Limit</title>
+    <title>Speed Assistant</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -16,96 +16,134 @@
             height: 100vh;
             margin: 0;
             text-align: center;
-            /* Prevent text selection while driving */
             user-select: none;
             -webkit-user-select: none; 
+            overflow: hidden; /* Prevent scrolling */
         }
 
-        .speed-container {
-            border: 8px solid #ff3b30; /* Traffic Red */
+        /* --- SPEED LIMIT SIGN --- */
+        .limit-container {
+            border: 10px solid #ff3b30; /* Traffic Red */
             border-radius: 50%;
-            width: 280px;
-            height: 280px;
+            width: 220px;
+            height: 220px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             background: white;
             color: black;
-            box-shadow: 0 0 30px rgba(255, 59, 48, 0.3);
-            cursor: pointer; /* Hint that it's clickable */
+            box-shadow: 0 0 40px rgba(255, 59, 48, 0.2);
+            margin-bottom: 40px;
+            position: relative;
         }
 
-        .label {
-            font-size: 1.2rem;
+        .limit-label {
+            font-size: 1rem;
             text-transform: uppercase;
-            font-weight: bold;
+            font-weight: 700;
             color: #555;
-            margin-bottom: -10px;
+            margin-bottom: -5px;
         }
 
-        .limit {
-            font-size: 8rem;
+        .limit-value {
+            font-size: 7rem;
             font-weight: 900;
             line-height: 1;
+            letter-spacing: -2px;
         }
 
-        .unit {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #555;
-            margin-top: 5px;
+        /* --- CURRENT SPEED DISPLAY --- */
+        .current-speed-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .current-label {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .current-value {
+            font-size: 5rem;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums; /* Prevents jitter when numbers change */
+            line-height: 1;
+            color: white; /* Default color */
+            transition: color 0.3s ease;
+        }
+        
+        .current-unit {
+            font-size: 1.2rem;
+            color: #888;
+            font-weight: 600;
+        }
+
+        /* Overspeed State */
+        .overspeed {
+            color: #ff453a !important; /* Bright Red */
+            text-shadow: 0 0 20px rgba(255, 69, 58, 0.5);
+        }
+
+        /* --- FOOTER STATUS --- */
+        .footer {
+            position: absolute;
+            bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
         }
 
         .status {
-            margin-top: 40px;
-            font-size: 0.9rem;
-            color: #888;
-            padding: 0 20px;
-        }
-
-        .debug {
-            font-size: 0.7rem;
-            color: #444;
-            margin-top: 10px;
-        }
-
-        /* Wake Lock Status Indicator */
-        .wake-status {
-            margin-top: 15px;
             font-size: 0.8rem;
-            color: #4cd964; /* iOS Green */
+            color: #666;
+        }
+
+        .wake-status {
+            font-size: 0.7rem;
+            color: #30d158; /* iOS Green */
             opacity: 0;
             transition: opacity 0.5s;
         }
-        .wake-status.active {
-            opacity: 1;
-        }
+        .wake-status.active { opacity: 1; }
+
     </style>
 </head>
 <body>
 
-    <div class="speed-container" onclick="requestWakeLock()">
-        <div class="label">Limit</div>
-        <div class="limit" id="limitDisplay">--</div>
-        <div class="unit">MPH</div>
+    <div class="limit-container" onclick="requestWakeLock()">
+        <div class="limit-label">LIMIT</div>
+        <div class="limit-value" id="limitDisplay">--</div>
     </div>
 
-    <div class="status" id="statusMsg">Waiting for GPS...</div>
-    <div class="wake-status" id="wakeMsg">⚡ Screen Awake Active</div>
-    <div class="debug" id="debugMsg"></div>
+    <div class="current-speed-container">
+        <div class="current-label">Your Speed</div>
+        <div class="current-value" id="currentSpeedDisplay">0</div>
+        <div class="current-unit">MPH</div>
+    </div>
+
+    <div class="footer">
+        <div class="status" id="statusMsg">Waiting for GPS...</div>
+        <div class="wake-status" id="wakeMsg">⚡ Screen Awake Active</div>
+    </div>
 
     <script>
+        // DOM Elements
         const limitDisplay = document.getElementById('limitDisplay');
+        const currentSpeedDisplay = document.getElementById('currentSpeedDisplay');
         const statusMsg = document.getElementById('statusMsg');
-        const debugMsg = document.getElementById('debugMsg');
         const wakeMsg = document.getElementById('wakeMsg');
 
-        // --- SPEED LIMIT LOGIC ---
-
+        // State Variables
+        let currentLimit = null; // Store the limit as a number for comparison
         let lastFetchTime = 0;
         const MIN_FETCH_INTERVAL = 5000; 
 
+        // UK Highway Defaults
         const highwayDefaults = {
             "motorway": 70, "motorway_link": 70,
             "trunk": 60, "primary": 60, "secondary": 60,
@@ -113,21 +151,22 @@
             "residential": 30, "living_street": 20, "service": 10
         };
 
+        // --- 1. SPEED LIMIT API LOGIC ---
         function updateSpeedLimit(lat, lon) {
             const now = Date.now();
             if (now - lastFetchTime < MIN_FETCH_INTERVAL) return;
             lastFetchTime = now;
 
-            statusMsg.textContent = "Updating...";
+            statusMsg.textContent = "Checking Road Data...";
             
-            const query = `[out:json];way(around:15,${lat},${lon})["highway"];out tags;`;
+            const query = `[out:json];way(around:20,${lat},${lon})["highway"];out tags;`;
             const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
 
             fetch(url)
                 .then(response => response.json())
                 .then(data => {
                     if (!data.elements || data.elements.length === 0) {
-                        displayLimit("?");
+                        setLimitDisplay("?");
                         statusMsg.textContent = "Unknown Road";
                         return;
                     }
@@ -137,19 +176,19 @@
 
                     if (road.tags.maxspeed) {
                         const speed = parseMaxSpeed(road.tags.maxspeed);
-                        displayLimit(speed);
+                        setLimitDisplay(speed);
                         statusMsg.textContent = "Source: Signage";
                     } else if (road.tags.highway && highwayDefaults[road.tags.highway]) {
-                        displayLimit(highwayDefaults[road.tags.highway]);
+                        const speed = highwayDefaults[road.tags.highway];
+                        setLimitDisplay(speed);
                         statusMsg.textContent = `Source: Default (${road.tags.highway})`;
                     } else {
-                        displayLimit("?");
+                        setLimitDisplay("?");
                         statusMsg.textContent = "No Data";
                     }
                 })
                 .catch(err => {
                     console.error(err);
-                    statusMsg.textContent = "API Error";
                 });
         }
 
@@ -157,11 +196,34 @@
             return parseInt(speedStr.toLowerCase().replace("mph", "").trim());
         }
 
-        function displayLimit(val) {
+        function setLimitDisplay(val) {
             limitDisplay.textContent = val;
+            currentLimit = (typeof val === 'number') ? val : null;
+            checkOverspeed(); // Re-check color when limit changes
         }
 
-        // --- GPS LOGIC ---
+        // --- 2. GPS & CURRENT SPEED LOGIC ---
+        function updateCurrentSpeed(speedMs) {
+            // Speed comes in m/s. Convert to mph: 1 m/s = 2.23694 mph
+            // If speed is null (stationary), default to 0
+            const mph = speedMs ? Math.round(speedMs * 2.23694) : 0;
+            
+            currentSpeedDisplay.textContent = mph;
+            checkOverspeed(mph);
+        }
+
+        function checkOverspeed(currentMph) {
+            // If we didn't pass a speed, grab it from the DOM
+            if (currentMph === undefined) {
+                currentMph = parseInt(currentSpeedDisplay.textContent);
+            }
+
+            if (currentLimit !== null && currentMph > currentLimit) {
+                currentSpeedDisplay.classList.add('overspeed');
+            } else {
+                currentSpeedDisplay.classList.remove('overspeed');
+            }
+        }
 
         if ("geolocation" in navigator) {
             navigator.geolocation.watchPosition(
@@ -169,57 +231,48 @@
                     const lat = position.coords.latitude;
                     const lon = position.coords.longitude;
                     const acc = position.coords.accuracy;
+                    const speed = position.coords.speed; // Speed in m/s
 
-                    debugMsg.textContent = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)} (±${Math.round(acc)}m)`;
-                    
+                    updateCurrentSpeed(speed);
+
+                    // Only query API if accuracy is decent (<50m) to save data/battery
                     if (acc < 50) {
                         updateSpeedLimit(lat, lon);
-                    } else {
-                        statusMsg.textContent = "GPS Accuracy Low";
                     }
                 },
                 (error) => {
                     statusMsg.textContent = "GPS Access Denied";
                 },
-                { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+                { 
+                    enableHighAccuracy: true, 
+                    maximumAge: 0, // Force fresh data
+                    timeout: 5000 
+                }
             );
         } else {
             statusMsg.textContent = "Geolocation not supported.";
         }
 
-        // --- WAKE LOCK LOGIC ---
-
+        // --- 3. WAKE LOCK LOGIC ---
         let wakeLock = null;
-
         async function requestWakeLock() {
             if ('wakeLock' in navigator) {
                 try {
                     wakeLock = await navigator.wakeLock.request('screen');
-                    wakeMsg.classList.add('active'); // Show green text
-                    
-                    // Listener to reset lock if user minimizes/switches tabs and comes back
+                    wakeMsg.classList.add('active');
                     wakeLock.addEventListener('release', () => {
                         wakeMsg.classList.remove('active');
-                        console.log('Wake Lock released');
                     });
-                    console.log('Wake Lock active');
                 } catch (err) {
-                    console.error(`${err.name}, ${err.message}`);
-                    wakeMsg.textContent = "Wake Lock Failed";
+                    console.log(err);
                 }
-            } else {
-                wakeMsg.textContent = "Wake Lock Not Supported";
             }
         }
-
-        // Handle visibility change (re-acquire lock when app comes back to foreground)
         document.addEventListener('visibilitychange', async () => {
             if (wakeLock !== null && document.visibilityState === 'visible') {
                 await requestWakeLock();
             }
         });
-
-        // Try to acquire lock immediately on load
         requestWakeLock();
 
     </script>
