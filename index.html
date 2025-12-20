@@ -26,11 +26,18 @@
             user-select: none;
             -webkit-user-select: none; 
             overflow: hidden; 
+            /* Smooth transition for the red flash */
+            transition: background-color 0.3s ease;
+        }
+
+        /* --- OVERSPEED STATE (Applied to Body) --- */
+        body.overspeed {
+            background-color: #b71c1c !important; /* Deep Alert Red */
         }
 
         /* --- SPEED LIMIT SIGN --- */
         .limit-container {
-            border: 10px solid #ff3b30; 
+            border: 10px solid #ff3b30; /* Default Red Border */
             border-radius: 50%;
             width: 220px;
             height: 220px;
@@ -44,6 +51,13 @@
             margin-bottom: 40px;
             position: relative;
             cursor: pointer;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        /* Invert border color when screen is red so it pops */
+        body.overspeed .limit-container {
+            border-color: white;
+            box-shadow: 0 0 50px rgba(255, 255, 255, 0.4);
         }
 
         .limit-label {
@@ -74,7 +88,10 @@
             letter-spacing: 2px;
             color: #888;
             margin-bottom: 5px;
+            /* Make label lighter when background is red for contrast */
+            transition: color 0.3s;
         }
+        body.overspeed .current-label { color: rgba(255,255,255, 0.8); }
 
         .current-value {
             font-size: 5rem;
@@ -82,20 +99,15 @@
             font-variant-numeric: tabular-nums; 
             line-height: 1;
             color: white; 
-            transition: color 0.3s ease;
         }
         
         .current-unit {
             font-size: 1.2rem;
             color: #888;
             font-weight: 600;
+            transition: color 0.3s;
         }
-
-        /* Overspeed State */
-        .overspeed {
-            color: #ff453a !important; 
-            text-shadow: 0 0 20px rgba(255, 69, 58, 0.5);
-        }
+        body.overspeed .current-unit { color: rgba(255,255,255, 0.8); }
 
         /* --- FOOTER STATUS --- */
         .footer {
@@ -109,7 +121,9 @@
         .status {
             font-size: 0.8rem;
             color: #666;
+            transition: color 0.3s;
         }
+        body.overspeed .status { color: rgba(255,255,255, 0.6); }
 
         .wake-status {
             font-size: 0.7rem;
@@ -118,6 +132,9 @@
             transition: opacity 0.5s;
         }
         .wake-status.active { opacity: 1; }
+
+        /* Make green text brighter on red bg */
+        body.overspeed .wake-status { color: #66ff85; }
 
     </style>
 </head>
@@ -143,8 +160,6 @@
         // ==========================================
         // CONFIGURATION
         // ==========================================
-        // Insert your HERE API Key here. 
-        // Keep blank ("") to disable the backup feature.
         const HERE_API_KEY = "6gHvApqVJFF0SKgYUL-DK1pIuSlpm8EjDRMMVrkaH-E"; 
         // ==========================================
 
@@ -157,7 +172,7 @@
         let lastFetchTime = 0;
         const MIN_FETCH_INTERVAL = 5000; 
 
-        // UK Highway Defaults (Fallback 1)
+        // UK Highway Defaults
         const highwayDefaults = {
             "motorway": 70, "motorway_link": 70,
             "trunk": 60, "primary": 60, "secondary": 60,
@@ -184,7 +199,6 @@
                     let source = "";
 
                     if (data.elements && data.elements.length > 0) {
-                        // Priority: Explicit Maxspeed > Implicit Highway Type
                         let road = data.elements.find(e => e.tags.maxspeed) || data.elements[0];
 
                         if (road.tags.maxspeed) {
@@ -196,12 +210,10 @@
                         }
                     }
 
-                    // 2. Decision: Use OSM or Fallback to HERE?
                     if (foundLimit) {
                         setLimitDisplay(foundLimit);
                         statusMsg.textContent = source;
                     } else {
-                        // OSM failed, try HERE
                         if (HERE_API_KEY) {
                             fetchHereSpeedLimit(lat, lon, heading);
                         } else {
@@ -212,7 +224,6 @@
                 })
                 .catch(err => {
                     console.error("OSM Error:", err);
-                    // On OSM network error, try HERE
                     if (HERE_API_KEY) fetchHereSpeedLimit(lat, lon, heading);
                 });
         }
@@ -221,40 +232,24 @@
         function fetchHereSpeedLimit(lat, lon, heading) {
             statusMsg.textContent = "Checking HERE Maps...";
             
-            // We use the 'routematching' API which is robust for speed limits.
-            // We simulate a tiny segment using heading to help it match the correct side of road.
-            // If heading is null (stopped), we just create a tiny offset.
-            
             const offset = 0.0001; 
             let lat2 = lat + offset;
             let lon2 = lon + offset;
 
-            // Construct URL
             const baseUrl = "https://routematching.hereapi.com/v8/match/routelinks";
             const params = `apikey=${HERE_API_KEY}&waypoint0=${lat},${lon}&waypoint1=${lat2},${lon2}&mode=fastest;car&attributes=SPEED_LIMITS_FCn(*)`;
 
             fetch(`${baseUrl}?${params}`)
                 .then(res => res.json())
                 .then(data => {
-                    // Extract speed limit from HERE response structure
                     try {
-                        // Look for the first matched link with speed limit data
                         const link = data.response.route[0].leg[0].link[0];
                         const attributes = link.attributes;
-                        
-                        // HERE returns limits in km/h usually, or based on region.
-                        // We look for "SPEED_LIMITS_FCN" arrays.
-                        // The structure is complex, let's look for any speed limit field.
-                        
                         let speedKmh = 0;
                         
-                        // Check explicit speed limit fields (FC1 to FC5)
                         const keys = Object.keys(attributes);
                         for (const key of keys) {
                             if (key.startsWith("SPEED_LIMITS_FC") && attributes[key].length > 0) {
-                                // HERE returns: [ { "FROM_REF_SPEED_LIMIT": "50", "TO_REF_SPEED_LIMIT": "50" } ]
-                                // We take the max of the two directions if we don't know better,
-                                // or just the first one.
                                 const val = attributes[key][0];
                                 const v1 = parseInt(val.FROM_REF_SPEED_LIMIT) || 0;
                                 const v2 = parseInt(val.TO_REF_SPEED_LIMIT) || 0;
@@ -264,7 +259,6 @@
                         }
 
                         if (speedKmh > 0) {
-                            // Convert KPH to MPH
                             const mph = Math.round(speedKmh * 0.621371);
                             setLimitDisplay(mph);
                             statusMsg.textContent = "Source: HERE Maps";
@@ -303,10 +297,12 @@
 
         function checkOverspeed(currentMph) {
             if (currentMph === undefined) currentMph = parseInt(currentSpeedDisplay.textContent);
+            
+            // Apply class to BODY for full-screen redness
             if (currentLimit !== null && currentMph > currentLimit) {
-                currentSpeedDisplay.classList.add('overspeed');
+                document.body.classList.add('overspeed');
             } else {
-                currentSpeedDisplay.classList.remove('overspeed');
+                document.body.classList.remove('overspeed');
             }
         }
 
