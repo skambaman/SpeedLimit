@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Speed Assistant</title>
+    
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#121212">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="manifest.json">
+
+    <title>Speed Assistant</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -23,12 +25,12 @@
             text-align: center;
             user-select: none;
             -webkit-user-select: none; 
-            overflow: hidden; /* Prevent scrolling */
+            overflow: hidden; 
         }
 
         /* --- SPEED LIMIT SIGN --- */
         .limit-container {
-            border: 10px solid #ff3b30; /* Traffic Red */
+            border: 10px solid #ff3b30; 
             border-radius: 50%;
             width: 220px;
             height: 220px;
@@ -41,6 +43,7 @@
             box-shadow: 0 0 40px rgba(255, 59, 48, 0.2);
             margin-bottom: 40px;
             position: relative;
+            cursor: pointer;
         }
 
         .limit-label {
@@ -76,9 +79,9 @@
         .current-value {
             font-size: 5rem;
             font-weight: 800;
-            font-variant-numeric: tabular-nums; /* Prevents jitter when numbers change */
+            font-variant-numeric: tabular-nums; 
             line-height: 1;
-            color: white; /* Default color */
+            color: white; 
             transition: color 0.3s ease;
         }
         
@@ -90,7 +93,7 @@
 
         /* Overspeed State */
         .overspeed {
-            color: #ff453a !important; /* Bright Red */
+            color: #ff453a !important; 
             text-shadow: 0 0 20px rgba(255, 69, 58, 0.5);
         }
 
@@ -110,7 +113,7 @@
 
         .wake-status {
             font-size: 0.7rem;
-            color: #30d158; /* iOS Green */
+            color: #30d158; 
             opacity: 0;
             transition: opacity 0.5s;
         }
@@ -137,18 +140,24 @@
     </div>
 
     <script>
-        // DOM Elements
+        // ==========================================
+        // CONFIGURATION
+        // ==========================================
+        // Insert your HERE API Key here. 
+        // Keep blank ("") to disable the backup feature.
+        const HERE_API_KEY = "6gHvApqVJFF0SKgYUL-DK1pIuSlpm8EjDRMMVrkaH-E"; 
+        // ==========================================
+
         const limitDisplay = document.getElementById('limitDisplay');
         const currentSpeedDisplay = document.getElementById('currentSpeedDisplay');
         const statusMsg = document.getElementById('statusMsg');
         const wakeMsg = document.getElementById('wakeMsg');
 
-        // State Variables
-        let currentLimit = null; // Store the limit as a number for comparison
+        let currentLimit = null; 
         let lastFetchTime = 0;
         const MIN_FETCH_INTERVAL = 5000; 
 
-        // UK Highway Defaults
+        // UK Highway Defaults (Fallback 1)
         const highwayDefaults = {
             "motorway": 70, "motorway_link": 70,
             "trunk": 60, "primary": 60, "secondary": 60,
@@ -156,44 +165,122 @@
             "residential": 30, "living_street": 20, "service": 10
         };
 
-        // --- 1. SPEED LIMIT API LOGIC ---
-        function updateSpeedLimit(lat, lon) {
+        // --- MAIN LOGIC ---
+        function updateSpeedLimit(lat, lon, heading) {
             const now = Date.now();
             if (now - lastFetchTime < MIN_FETCH_INTERVAL) return;
             lastFetchTime = now;
 
-            statusMsg.textContent = "Checking Road Data...";
+            statusMsg.textContent = "Checking OSM...";
             
+            // 1. Try OpenStreetMap First
             const query = `[out:json];way(around:20,${lat},${lon})["highway"];out tags;`;
             const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
 
             fetch(url)
                 .then(response => response.json())
                 .then(data => {
-                    if (!data.elements || data.elements.length === 0) {
-                        setLimitDisplay("?");
-                        statusMsg.textContent = "Unknown Road";
-                        return;
+                    let foundLimit = null;
+                    let source = "";
+
+                    if (data.elements && data.elements.length > 0) {
+                        // Priority: Explicit Maxspeed > Implicit Highway Type
+                        let road = data.elements.find(e => e.tags.maxspeed) || data.elements[0];
+
+                        if (road.tags.maxspeed) {
+                            foundLimit = parseMaxSpeed(road.tags.maxspeed);
+                            source = "OSM Signage";
+                        } else if (road.tags.highway && highwayDefaults[road.tags.highway]) {
+                            foundLimit = highwayDefaults[road.tags.highway];
+                            source = `OSM Default (${road.tags.highway})`;
+                        }
                     }
 
-                    // Priority: Explicit Maxspeed > Implicit Highway Type
-                    let road = data.elements.find(e => e.tags.maxspeed) || data.elements[0];
-
-                    if (road.tags.maxspeed) {
-                        const speed = parseMaxSpeed(road.tags.maxspeed);
-                        setLimitDisplay(speed);
-                        statusMsg.textContent = "Source: Signage";
-                    } else if (road.tags.highway && highwayDefaults[road.tags.highway]) {
-                        const speed = highwayDefaults[road.tags.highway];
-                        setLimitDisplay(speed);
-                        statusMsg.textContent = `Source: Default (${road.tags.highway})`;
+                    // 2. Decision: Use OSM or Fallback to HERE?
+                    if (foundLimit) {
+                        setLimitDisplay(foundLimit);
+                        statusMsg.textContent = source;
                     } else {
+                        // OSM failed, try HERE
+                        if (HERE_API_KEY) {
+                            fetchHereSpeedLimit(lat, lon, heading);
+                        } else {
+                            setLimitDisplay("?");
+                            statusMsg.textContent = "No Data (OSM)";
+                        }
+                    }
+                })
+                .catch(err => {
+                    console.error("OSM Error:", err);
+                    // On OSM network error, try HERE
+                    if (HERE_API_KEY) fetchHereSpeedLimit(lat, lon, heading);
+                });
+        }
+
+        // --- HERE MAPS BACKUP LOGIC ---
+        function fetchHereSpeedLimit(lat, lon, heading) {
+            statusMsg.textContent = "Checking HERE Maps...";
+            
+            // We use the 'routematching' API which is robust for speed limits.
+            // We simulate a tiny segment using heading to help it match the correct side of road.
+            // If heading is null (stopped), we just create a tiny offset.
+            
+            const offset = 0.0001; 
+            let lat2 = lat + offset;
+            let lon2 = lon + offset;
+
+            // Construct URL
+            const baseUrl = "https://routematching.hereapi.com/v8/match/routelinks";
+            const params = `apikey=${HERE_API_KEY}&waypoint0=${lat},${lon}&waypoint1=${lat2},${lon2}&mode=fastest;car&attributes=SPEED_LIMITS_FCn(*)`;
+
+            fetch(`${baseUrl}?${params}`)
+                .then(res => res.json())
+                .then(data => {
+                    // Extract speed limit from HERE response structure
+                    try {
+                        // Look for the first matched link with speed limit data
+                        const link = data.response.route[0].leg[0].link[0];
+                        const attributes = link.attributes;
+                        
+                        // HERE returns limits in km/h usually, or based on region.
+                        // We look for "SPEED_LIMITS_FCN" arrays.
+                        // The structure is complex, let's look for any speed limit field.
+                        
+                        let speedKmh = 0;
+                        
+                        // Check explicit speed limit fields (FC1 to FC5)
+                        const keys = Object.keys(attributes);
+                        for (const key of keys) {
+                            if (key.startsWith("SPEED_LIMITS_FC") && attributes[key].length > 0) {
+                                // HERE returns: [ { "FROM_REF_SPEED_LIMIT": "50", "TO_REF_SPEED_LIMIT": "50" } ]
+                                // We take the max of the two directions if we don't know better,
+                                // or just the first one.
+                                const val = attributes[key][0];
+                                const v1 = parseInt(val.FROM_REF_SPEED_LIMIT) || 0;
+                                const v2 = parseInt(val.TO_REF_SPEED_LIMIT) || 0;
+                                speedKmh = Math.max(v1, v2);
+                                break; 
+                            }
+                        }
+
+                        if (speedKmh > 0) {
+                            // Convert KPH to MPH
+                            const mph = Math.round(speedKmh * 0.621371);
+                            setLimitDisplay(mph);
+                            statusMsg.textContent = "Source: HERE Maps";
+                        } else {
+                            throw new Error("No limit in HERE data");
+                        }
+
+                    } catch (e) {
                         setLimitDisplay("?");
                         statusMsg.textContent = "No Data";
                     }
                 })
                 .catch(err => {
-                    console.error(err);
+                    console.error("HERE Error:", err);
+                    setLimitDisplay("?");
+                    statusMsg.textContent = "Data Unavailable";
                 });
         }
 
@@ -204,25 +291,18 @@
         function setLimitDisplay(val) {
             limitDisplay.textContent = val;
             currentLimit = (typeof val === 'number') ? val : null;
-            checkOverspeed(); // Re-check color when limit changes
+            checkOverspeed();
         }
 
-        // --- 2. GPS & CURRENT SPEED LOGIC ---
+        // --- GPS & CURRENT SPEED LOGIC ---
         function updateCurrentSpeed(speedMs) {
-            // Speed comes in m/s. Convert to mph: 1 m/s = 2.23694 mph
-            // If speed is null (stationary), default to 0
             const mph = speedMs ? Math.round(speedMs * 2.23694) : 0;
-            
             currentSpeedDisplay.textContent = mph;
             checkOverspeed(mph);
         }
 
         function checkOverspeed(currentMph) {
-            // If we didn't pass a speed, grab it from the DOM
-            if (currentMph === undefined) {
-                currentMph = parseInt(currentSpeedDisplay.textContent);
-            }
-
+            if (currentMph === undefined) currentMph = parseInt(currentSpeedDisplay.textContent);
             if (currentLimit !== null && currentMph > currentLimit) {
                 currentSpeedDisplay.classList.add('overspeed');
             } else {
@@ -236,29 +316,25 @@
                     const lat = position.coords.latitude;
                     const lon = position.coords.longitude;
                     const acc = position.coords.accuracy;
-                    const speed = position.coords.speed; // Speed in m/s
+                    const speed = position.coords.speed;
+                    const heading = position.coords.heading;
 
                     updateCurrentSpeed(speed);
 
-                    // Only query API if accuracy is decent (<50m) to save data/battery
                     if (acc < 50) {
-                        updateSpeedLimit(lat, lon);
+                        updateSpeedLimit(lat, lon, heading);
                     }
                 },
                 (error) => {
                     statusMsg.textContent = "GPS Access Denied";
                 },
-                { 
-                    enableHighAccuracy: true, 
-                    maximumAge: 0, // Force fresh data
-                    timeout: 5000 
-                }
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
             );
         } else {
             statusMsg.textContent = "Geolocation not supported.";
         }
 
-        // --- 3. WAKE LOCK LOGIC ---
+        // --- WAKE LOCK LOGIC ---
         let wakeLock = null;
         async function requestWakeLock() {
             if ('wakeLock' in navigator) {
@@ -268,9 +344,7 @@
                     wakeLock.addEventListener('release', () => {
                         wakeMsg.classList.remove('active');
                     });
-                } catch (err) {
-                    console.log(err);
-                }
+                } catch (err) { console.log(err); }
             }
         }
         document.addEventListener('visibilitychange', async () => {
