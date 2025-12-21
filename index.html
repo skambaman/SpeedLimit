@@ -29,6 +29,25 @@
             transition: background-color 0.3s ease;
         }
 
+        /* --- PROGRESS BAR --- */
+        .progress-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 12px;
+            background-color: #333;
+            z-index: 100;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background-color: #30d158; /* Default Green */
+            transition: width 0.3s ease, background-color 0.3s ease;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+
         /* --- OVERSPEED STATE --- */
         body.overspeed {
             background-color: #b71c1c !important; 
@@ -146,6 +165,10 @@
 </head>
 <body>
 
+    <div class="progress-container">
+        <div class="progress-fill" id="progressFill"></div>
+    </div>
+
     <div class="limit-container" onclick="requestWakeLock()">
         <div class="limit-label">LIMIT</div>
         <div class="limit-value" id="limitDisplay">--</div>
@@ -168,8 +191,8 @@
         // CONFIGURATION
         // ==========================================
         const HERE_API_KEY = "6gHvApqVJFF0SKgYUL-DK1pIuSlpm8EjDRMMVrkaH-E"; 
-        const FETCH_DISTANCE_THRESHOLD = 50; // Meters
-        const MIN_FETCH_INTERVAL = 5000; // Milliseconds
+        const FETCH_DISTANCE_THRESHOLD = 50; 
+        const MIN_FETCH_INTERVAL = 5000; 
         // ==========================================
 
         const limitDisplay = document.getElementById('limitDisplay');
@@ -177,15 +200,14 @@
         const statusMsg = document.getElementById('statusMsg');
         const debugStats = document.getElementById('debugStats');
         const wakeMsg = document.getElementById('wakeMsg');
+        const progressFill = document.getElementById('progressFill');
 
         let currentLimit = null; 
         
-        // Tracking variables
         let lastFetchCoords = { lat: 0, lon: 0 };
         let lastFetchTime = 0;
         let firstRun = true;
         
-        // Separate Debug Counters
         let osmTotalCalls = 0;
         let hereTotalCalls = 0;
         let lastServiceUsed = "-";
@@ -197,7 +219,6 @@
             "residential": 30, "living_street": 20, "service": 10
         };
 
-        // --- DISTANCE CALCULATION ---
         function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
             const R = 6371e3; 
             const dLat = deg2rad(lat2 - lat1);
@@ -214,19 +235,14 @@
             return deg * (Math.PI/180);
         }
 
-        // --- DEBUG DISPLAY ---
         function updateDebug(service) {
             if(service) lastServiceUsed = service;
             debugStats.textContent = `OSM: ${osmTotalCalls} | HERE: ${hereTotalCalls} | Last: ${lastServiceUsed}`;
         }
 
-        // --- MAIN LOGIC ---
         function updateSpeedLimit(lat, lon, heading) {
-            
             lastFetchCoords = { lat: lat, lon: lon };
             statusMsg.textContent = "Checking OSM...";
-            
-            // Increment OSM Count
             osmTotalCalls++;
             updateDebug("OSM (Chk)");
             
@@ -273,8 +289,6 @@
 
         function fetchHereSpeedLimit(lat, lon, heading) {
             statusMsg.textContent = "Checking HERE Maps...";
-            
-            // Increment HERE Count
             hereTotalCalls++;
             updateDebug("HERE (Chk)");
             
@@ -292,7 +306,6 @@
                         const link = data.response.route[0].leg[0].link[0];
                         const attributes = link.attributes;
                         let speedKmh = 0;
-                        
                         const keys = Object.keys(attributes);
                         for (const key of keys) {
                             if (key.startsWith("SPEED_LIMITS_FC") && attributes[key].length > 0) {
@@ -345,6 +358,28 @@
 
         function checkOverspeed(currentMph) {
             if (currentMph === undefined) currentMph = parseInt(currentSpeedDisplay.textContent);
+            
+            // 1. Calculate Percentage
+            let percentage = 0;
+            if (currentLimit && currentLimit > 0) {
+                percentage = (currentMph / currentLimit) * 100;
+                // Cap it visually at 100% so bar doesn't overflow
+                if(percentage > 100) percentage = 100;
+            }
+
+            // 2. Determine Color
+            let barColor = "#30d158"; // Green
+            if (percentage >= 100) {
+                barColor = "#ff3b30"; // Red
+            } else if (percentage >= 90) {
+                barColor = "#ffcc00"; // Yellow
+            }
+
+            // 3. Update Bar
+            progressFill.style.width = percentage + "%";
+            progressFill.style.backgroundColor = barColor;
+
+            // 4. Update Full Screen Red Alert
             if (currentLimit !== null && currentMph > currentLimit) {
                 document.body.classList.add('overspeed');
             } else {
@@ -352,7 +387,6 @@
             }
         }
 
-        // --- GPS WATCHER ---
         if ("geolocation" in navigator) {
             navigator.geolocation.watchPosition(
                 (position) => {
@@ -385,7 +419,6 @@
             statusMsg.textContent = "Geolocation not supported.";
         }
 
-        // --- WAKE LOCK ---
         let wakeLock = null;
         async function requestWakeLock() {
             if ('wakeLock' in navigator) {
