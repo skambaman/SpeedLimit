@@ -120,7 +120,7 @@
                 Support this App<br><br><small>(Ad Space)</small>
             </div>
         </div>
-        <button class="start-btn" onclick="closeSplash()">Start Assistant</button>
+        <button class="start-btn" onclick="startApp()">Start Assistant</button>
     </div>
 
     <div class="progress-container"><div class="progress-fill" id="progressFill"></div></div>
@@ -166,95 +166,89 @@
         let lastFetchTime = 0;
         let firstRun = true;
         let demoLimit = 60; 
+        let lastWarningTime = 0; // For Audio throttling
 
         // Counters
         let osmTotalCalls = parseInt(localStorage.getItem('osmTotalCalls')) || 0;
         let hereTotalCalls = parseInt(localStorage.getItem('hereTotalCalls')) || 0;
-        let cachedLookups = 0; // Runtime counter for cache hits
+        let cachedLookups = 0; 
 
-        // --- CACHE MANAGER (DATABASE LOGIC) ---
-        const CacheManager = {
-            // 4 decimal places = approx 11 meters resolution
-            PRECISION: 4,
-            PREFIX: "sl_",
-            
-            // Generate O(1) Lookup Key
-            getKey: function(lat, lon) {
-                return this.PREFIX + lat.toFixed(this.PRECISION) + "_" + lon.toFixed(this.PRECISION);
-            },
-
-            // Get Data (Returns null if not found)
-            get: function(lat, lon) {
-                const key = this.getKey(lat, lon);
-                const raw = localStorage.getItem(key);
-                if (!raw) return null;
-                try {
-                    return JSON.parse(raw);
-                } catch(e) { return null; }
-            },
-
-            // Save Data
-            save: function(lat, lon, limit) {
-                const key = this.getKey(lat, lon);
-                // We store limit (l) and timestamp (t) to save space
-                const record = { l: limit, t: Date.now() };
-                
-                try {
-                    localStorage.setItem(key, JSON.stringify(record));
-                } catch (e) {
-                    // Quota exceeded? Prune old data!
-                    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
-                        console.log("Storage full. Pruning old records...");
-                        this.prune();
-                        // Try saving again after prune
-                        try { localStorage.setItem(key, JSON.stringify(record)); } catch(e2){} 
-                    }
-                }
-            },
-
-            // Garbage Collection (Delete oldest 20%)
-            prune: function() {
-                let items = [];
-                // 1. Scan all storage keys
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    if (key.startsWith(this.PREFIX)) {
-                        try {
-                            const val = JSON.parse(localStorage.getItem(key));
-                            items.push({ key: key, t: val.t });
-                        } catch(e){}
-                    }
-                }
-                // 2. Sort by time (Oldest first)
-                items.sort((a, b) => a.t - b.t);
-                
-                // 3. Delete oldest 20%
-                const deleteCount = Math.max(1, Math.floor(items.length * 0.2));
-                for (let i = 0; i < deleteCount; i++) {
-                    localStorage.removeItem(items[i].key);
-                }
-                console.log(`Pruned ${deleteCount} old records.`);
-            },
-
-            // Debug Helper
-            count: function() {
-                let c = 0;
-                for(let i=0; i<localStorage.length; i++) {
-                    if(localStorage.key(i).startsWith(this.PREFIX)) c++;
-                }
-                return c;
-            }
-        };
+        // --- AUDIO CONTEXT ---
+        let audioCtx = null;
 
         const highwayDefaults = {
             "motorway": 70, "motorway_link": 70, "trunk": 60, "primary": 60, "secondary": 60,
             "tertiary": 30, "unclassified": 60, "residential": 30, "living_street": 20, "service": 10
         };
 
-        // --- SPLASH LOGIC ---
-        function closeSplash() {
+        const CacheManager = {
+            PRECISION: 4, PREFIX: "sl_",
+            getKey: function(lat, lon) { return this.PREFIX + lat.toFixed(this.PRECISION) + "_" + lon.toFixed(this.PRECISION); },
+            get: function(lat, lon) {
+                try { return JSON.parse(localStorage.getItem(this.getKey(lat, lon))); } catch(e) { return null; }
+            },
+            save: function(lat, lon, limit) {
+                const key = this.getKey(lat, lon);
+                const record = { l: limit, t: Date.now() };
+                try { localStorage.setItem(key, JSON.stringify(record)); } catch (e) {
+                    if (e.name === 'QuotaExceededError') { this.prune(); try { localStorage.setItem(key, JSON.stringify(record)); } catch(e2){} }
+                }
+            },
+            prune: function() {
+                let items = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith(this.PREFIX)) {
+                        try { items.push({ key: key, t: JSON.parse(localStorage.getItem(key)).t }); } catch(e){}
+                    }
+                }
+                items.sort((a, b) => a.t - b.t);
+                const deleteCount = Math.max(1, Math.floor(items.length * 0.2));
+                for (let i = 0; i < deleteCount; i++) { localStorage.removeItem(items[i].key); }
+            },
+            count: function() {
+                let c = 0;
+                for(let i=0; i<localStorage.length; i++) if(localStorage.key(i).startsWith(this.PREFIX)) c++;
+                return c;
+            }
+        };
+
+        // --- SPLASH & AUDIO STARTUP ---
+        function startApp() {
             splashScreen.classList.add('hidden');
             requestWakeLock();
+            
+            // Initialize AudioContext on user interaction (required by browsers)
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            // Resume if suspended
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        // --- WARNING SOUND LOGIC ---
+        function playWarningSound() {
+            if (!audioCtx) return;
+
+            // Simple Beep (Sine Wave)
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note (Standard dashboard beep)
+            
+            // Volume Envelope (Attack/Decay to avoid clicking)
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.5);
         }
 
         // --- DISTANCE LOGIC ---
@@ -269,7 +263,6 @@
         function deg2rad(deg) { return deg * (Math.PI/180); }
 
         function updateDebug() {
-            // Shows: OSM Calls | HERE Calls | DB Records stored
             debugStats.textContent = `OSM:${osmTotalCalls} | HERE:${hereTotalCalls} | DB:${CacheManager.count()}`;
             localStorage.setItem('osmTotalCalls', osmTotalCalls);
             localStorage.setItem('hereTotalCalls', hereTotalCalls);
@@ -278,7 +271,6 @@
         function resetStats() {
             if(confirm("Reset counters and clear database?")) {
                 osmTotalCalls = 0; hereTotalCalls = 0;
-                // Clear Database
                 const keysToRemove = [];
                 for(let i=0; i<localStorage.length; i++) {
                     if(localStorage.key(i).startsWith(CacheManager.PREFIX)) keysToRemove.push(localStorage.key(i));
@@ -292,17 +284,15 @@
         function updateSpeedLimit(lat, lon, heading) {
             lastFetchCoords = { lat: lat, lon: lon };
 
-            // 1. CHECK CACHE FIRST (The efficient DB lookup)
             const cached = CacheManager.get(lat, lon);
             if (cached) {
                 setLimitDisplay(cached.l);
                 statusMsg.textContent = "Source: Local DB";
                 cachedLookups++;
-                updateDebug(); // To update DB count visual
-                return; // Stop here, save API call
+                updateDebug(); 
+                return; 
             }
 
-            // 2. API FALLBACKS
             statusMsg.textContent = "Checking OSM...";
             osmTotalCalls++;
             updateDebug();
@@ -330,8 +320,6 @@
                     if (foundLimit) {
                         setLimitDisplay(foundLimit);
                         statusMsg.textContent = source;
-                        // Don't cache OSM defaults, only high quality data? 
-                        // Actually, let's cache OSM too to save bandwidth
                         CacheManager.save(lat, lon, foundLimit);
                         updateDebug();
                     } else {
@@ -380,7 +368,6 @@
                             const mph = Math.round(speedKmh * 0.621371);
                             setLimitDisplay(mph);
                             statusMsg.textContent = "Source: HERE Maps";
-                            // SAVE TO DB FOR NEXT TIME
                             CacheManager.save(lat, lon, mph);
                             updateDebug();
                         } else { throw new Error("No limit"); }
@@ -425,8 +412,19 @@
             progressFill.style.width = percentage + "%";
             progressFill.style.backgroundColor = barColor;
 
-            if (currentLimit !== null && currentMph > currentLimit) { document.body.classList.add('overspeed'); } 
-            else { document.body.classList.remove('overspeed'); }
+            if (currentLimit !== null && currentMph > currentLimit) { 
+                document.body.classList.add('overspeed'); 
+                
+                // CHECK AUDIO WARNING
+                const now = Date.now();
+                if (now - lastWarningTime > 10000) { // 10 seconds (10000 ms)
+                    playWarningSound();
+                    lastWarningTime = now;
+                }
+
+            } else { 
+                document.body.classList.remove('overspeed'); 
+            }
         }
 
         // --- DEMO MODE ---
