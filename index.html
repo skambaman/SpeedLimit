@@ -29,153 +29,84 @@
             transition: background-color 0.3s ease;
         }
 
-        /* --- PROGRESS BAR --- */
-        .progress-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 30px; 
-            background-color: #3a3a3a; 
-            border-bottom: 1px solid #555; 
-            z-index: 100;
+        /* --- SPLASH SCREEN --- */
+        .splash-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #000000;
+            z-index: 2000;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            padding: 20px; box-sizing: border-box;
+            transition: opacity 0.5s ease;
+        }
+        .splash-overlay.hidden { opacity: 0; pointer-events: none; }
+        
+        .ad-container {
+            width: 300px; height: 250px;
+            background-color: #1a1a1a;
+            border: 1px dashed #444;
+            display: flex; align-items: center; justify-content: center;
+            color: #666; margin-bottom: 30px; border-radius: 8px;
+            overflow: hidden;
         }
 
+        .start-btn {
+            background-color: #30d158; color: black;
+            font-size: 1.2rem; font-weight: bold;
+            padding: 15px 40px; border: none; border-radius: 50px;
+            cursor: pointer; box-shadow: 0 0 20px rgba(48, 209, 88, 0.4);
+            text-transform: uppercase;
+        }
+
+        /* --- PROGRESS BAR --- */
+        .progress-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 30px; 
+            background-color: #3a3a3a; border-bottom: 1px solid #555; z-index: 100;
+        }
         .progress-fill {
-            height: 100%;
-            width: 0%;
-            background-color: #30d158; 
+            height: 100%; width: 0%; background-color: #30d158; 
             transition: width 0.1s linear, background-color 0.3s ease; 
             box-shadow: 0 0 10px rgba(0,0,0,0.5);
         }
 
-        /* --- OVERSPEED STATE --- */
-        body.overspeed {
-            background-color: #b71c1c !important; 
-        }
+        /* --- UI ELEMENTS --- */
+        body.overspeed { background-color: #b71c1c !important; }
 
-        /* --- SPEED LIMIT SIGN --- */
         .limit-container {
-            border: 10px solid #ff3b30; 
-            border-radius: 50%;
-            width: 220px;
-            height: 220px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: white;
-            color: black;
+            border: 10px solid #ff3b30; border-radius: 50%;
+            width: 220px; height: 220px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            background: white; color: black;
             box-shadow: 0 0 40px rgba(255, 59, 48, 0.2);
-            margin-bottom: 40px;
-            position: relative;
-            cursor: pointer;
+            margin-bottom: 40px; margin-top: 30px;
+            position: relative; cursor: pointer;
             transition: border-color 0.3s ease, box-shadow 0.3s ease;
-            margin-top: 30px; 
         }
+        body.overspeed .limit-container { border-color: white; box-shadow: 0 0 50px rgba(255, 255, 255, 0.4); }
 
-        body.overspeed .limit-container {
-            border-color: white;
-            box-shadow: 0 0 50px rgba(255, 255, 255, 0.4);
-        }
+        .limit-label { font-size: 1rem; font-weight: 700; color: #555; margin-bottom: -5px; text-transform: uppercase; }
+        .limit-value { font-size: 7rem; font-weight: 900; line-height: 1; letter-spacing: -2px; }
 
-        .limit-label {
-            font-size: 1rem;
-            text-transform: uppercase;
-            font-weight: 700;
-            color: #555;
-            margin-bottom: -5px;
-        }
-
-        .limit-value {
-            font-size: 7rem;
-            font-weight: 900;
-            line-height: 1;
-            letter-spacing: -2px;
-        }
-
-        /* --- CURRENT SPEED DISPLAY --- */
-        .current-speed-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            cursor: pointer; 
-        }
-
-        .current-label {
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: #888;
-            margin-bottom: 5px;
-            transition: color 0.3s;
-        }
+        .current-speed-container { display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+        .current-label { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 2px; color: #888; margin-bottom: 5px; transition: color 0.3s; }
         body.overspeed .current-label { color: rgba(255,255,255, 0.8); }
-
-        .current-value {
-            font-size: 5rem;
-            font-weight: 800;
-            font-variant-numeric: tabular-nums; 
-            line-height: 1;
-            color: white; 
-        }
-        
-        .current-unit {
-            font-size: 1.2rem;
-            color: #888;
-            font-weight: 600;
-            transition: color 0.3s;
-        }
+        .current-value { font-size: 5rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; color: white; }
+        .current-unit { font-size: 1.2rem; color: #888; font-weight: 600; transition: color 0.3s; }
         body.overspeed .current-unit { color: rgba(255,255,255, 0.8); }
 
-        /* --- FOOTER STATUS --- */
+        /* --- FOOTER --- */
         .footer {
-            position: absolute;
-            bottom: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-            align-items: center; /* Center align items */
+            position: absolute; bottom: 20px;
+            display: flex; flex-direction: column; align-items: center; gap: 5px;
         }
-
-        .status {
-            font-size: 0.8rem;
-            color: #666;
-            transition: color 0.3s;
-        }
-        
-        .debug-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .debug-stats {
-            font-size: 0.75rem;
-            font-family: monospace;
-            color: #888;
-        }
-        
-        /* Reset Button Style */
-        .reset-btn {
-            font-size: 0.65rem;
-            background: #333;
-            color: #ccc;
-            border: 1px solid #555;
-            border-radius: 4px;
-            padding: 2px 5px;
-            cursor: pointer;
-        }
-
-        body.overspeed .status, 
-        body.overspeed .debug-stats { color: rgba(255,255,255, 0.6); }
-
-        .wake-status {
-            font-size: 0.7rem;
-            color: #30d158; 
-            opacity: 0;
-            transition: opacity 0.5s;
-        }
+        .status { font-size: 0.8rem; color: #666; transition: color 0.3s; }
+        .debug-row { display: flex; align-items: center; gap: 10px; }
+        .debug-stats { font-size: 0.75rem; font-family: monospace; color: #888; }
+        .reset-btn { font-size: 0.65rem; background: #333; color: #ccc; border: 1px solid #555; border-radius: 4px; padding: 2px 5px; cursor: pointer; }
+        body.overspeed .status, body.overspeed .debug-stats { color: rgba(255,255,255, 0.6); }
+        .wake-status { font-size: 0.7rem; color: #30d158; opacity: 0; transition: opacity 0.5s; }
         .wake-status.active { opacity: 1; }
         body.overspeed .wake-status { color: #66ff85; }
 
@@ -183,9 +114,16 @@
 </head>
 <body>
 
-    <div class="progress-container">
-        <div class="progress-fill" id="progressFill"></div>
+    <div class="splash-overlay" id="splashScreen">
+        <div class="ad-container">
+            <div style="text-align:center; padding: 20px;">
+                Support this App<br><br><small>(Ad Space)</small>
+            </div>
+        </div>
+        <button class="start-btn" onclick="closeSplash()">Start Assistant</button>
     </div>
+
+    <div class="progress-container"><div class="progress-fill" id="progressFill"></div></div>
 
     <div class="limit-container" onclick="requestWakeLock()">
         <div class="limit-label">LIMIT</div>
@@ -200,92 +138,174 @@
 
     <div class="footer">
         <div class="status" id="statusMsg">Waiting for GPS...</div>
-        
         <div class="debug-row">
-            <div class="debug-stats" id="debugStats">OSM: 0 | HERE: 0 | Last: -</div>
+            <div class="debug-stats" id="debugStats">OSM: 0 | HERE: 0 | DB: 0</div>
             <button class="reset-btn" onclick="resetStats()">Reset</button>
         </div>
-
         <div class="wake-status" id="wakeMsg">⚡ Screen Awake Active</div>
     </div>
 
     <script>
-        // ==========================================
-        // CONFIGURATION
-        // ==========================================
+        // --- CONFIGURATION ---
         const HERE_API_KEY = "6gHvApqVJFF0SKgYUL-DK1pIuSlpm8EjDRMMVrkaH-E"; 
         const FETCH_DISTANCE_THRESHOLD = 50; 
         const MIN_FETCH_INTERVAL = 5000; 
-        // ==========================================
 
+        // --- GLOBAL ELEMENTS ---
         const limitDisplay = document.getElementById('limitDisplay');
         const currentSpeedDisplay = document.getElementById('currentSpeedDisplay');
         const statusMsg = document.getElementById('statusMsg');
         const debugStats = document.getElementById('debugStats');
         const wakeMsg = document.getElementById('wakeMsg');
         const progressFill = document.getElementById('progressFill');
+        const splashScreen = document.getElementById('splashScreen');
 
+        // --- STATE VARIABLES ---
         let currentLimit = null; 
         let lastFetchCoords = { lat: 0, lon: 0 };
         let lastFetchTime = 0;
         let firstRun = true;
-        
-        // Load stats from LocalStorage or default to 0
-        let osmTotalCalls = parseInt(localStorage.getItem('osmTotalCalls')) || 0;
-        let hereTotalCalls = parseInt(localStorage.getItem('hereTotalCalls')) || 0;
-        let lastServiceUsed = "-";
-
-        // Initialize Debug Display immediately
-        updateDebug();
-
         let demoLimit = 60; 
 
-        const highwayDefaults = {
-            "motorway": 70, "motorway_link": 70,
-            "trunk": 60, "primary": 60, "secondary": 60,
-            "tertiary": 30, "unclassified": 60,
-            "residential": 30, "living_street": 20, "service": 10
+        // Counters
+        let osmTotalCalls = parseInt(localStorage.getItem('osmTotalCalls')) || 0;
+        let hereTotalCalls = parseInt(localStorage.getItem('hereTotalCalls')) || 0;
+        let cachedLookups = 0; // Runtime counter for cache hits
+
+        // --- CACHE MANAGER (DATABASE LOGIC) ---
+        const CacheManager = {
+            // 4 decimal places = approx 11 meters resolution
+            PRECISION: 4,
+            PREFIX: "sl_",
+            
+            // Generate O(1) Lookup Key
+            getKey: function(lat, lon) {
+                return this.PREFIX + lat.toFixed(this.PRECISION) + "_" + lon.toFixed(this.PRECISION);
+            },
+
+            // Get Data (Returns null if not found)
+            get: function(lat, lon) {
+                const key = this.getKey(lat, lon);
+                const raw = localStorage.getItem(key);
+                if (!raw) return null;
+                try {
+                    return JSON.parse(raw);
+                } catch(e) { return null; }
+            },
+
+            // Save Data
+            save: function(lat, lon, limit) {
+                const key = this.getKey(lat, lon);
+                // We store limit (l) and timestamp (t) to save space
+                const record = { l: limit, t: Date.now() };
+                
+                try {
+                    localStorage.setItem(key, JSON.stringify(record));
+                } catch (e) {
+                    // Quota exceeded? Prune old data!
+                    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+                        console.log("Storage full. Pruning old records...");
+                        this.prune();
+                        // Try saving again after prune
+                        try { localStorage.setItem(key, JSON.stringify(record)); } catch(e2){} 
+                    }
+                }
+            },
+
+            // Garbage Collection (Delete oldest 20%)
+            prune: function() {
+                let items = [];
+                // 1. Scan all storage keys
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith(this.PREFIX)) {
+                        try {
+                            const val = JSON.parse(localStorage.getItem(key));
+                            items.push({ key: key, t: val.t });
+                        } catch(e){}
+                    }
+                }
+                // 2. Sort by time (Oldest first)
+                items.sort((a, b) => a.t - b.t);
+                
+                // 3. Delete oldest 20%
+                const deleteCount = Math.max(1, Math.floor(items.length * 0.2));
+                for (let i = 0; i < deleteCount; i++) {
+                    localStorage.removeItem(items[i].key);
+                }
+                console.log(`Pruned ${deleteCount} old records.`);
+            },
+
+            // Debug Helper
+            count: function() {
+                let c = 0;
+                for(let i=0; i<localStorage.length; i++) {
+                    if(localStorage.key(i).startsWith(this.PREFIX)) c++;
+                }
+                return c;
+            }
         };
 
+        const highwayDefaults = {
+            "motorway": 70, "motorway_link": 70, "trunk": 60, "primary": 60, "secondary": 60,
+            "tertiary": 30, "unclassified": 60, "residential": 30, "living_street": 20, "service": 10
+        };
+
+        // --- SPLASH LOGIC ---
+        function closeSplash() {
+            splashScreen.classList.add('hidden');
+            requestWakeLock();
+        }
+
+        // --- DISTANCE LOGIC ---
         function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
             const R = 6371e3; 
             const dLat = deg2rad(lat2 - lat1);
             const dLon = deg2rad(lon2 - lon1);
-            const a = 
-                Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-            const d = R * c; 
-            return d;
+            return R * c; 
         }
+        function deg2rad(deg) { return deg * (Math.PI/180); }
 
-        function deg2rad(deg) {
-            return deg * (Math.PI/180);
-        }
-
-        function updateDebug(service) {
-            if(service) lastServiceUsed = service;
-            debugStats.textContent = `OSM: ${osmTotalCalls} | HERE: ${hereTotalCalls} | Last: ${lastServiceUsed}`;
-            
-            // Save to LocalStorage whenever we update visuals
+        function updateDebug() {
+            // Shows: OSM Calls | HERE Calls | DB Records stored
+            debugStats.textContent = `OSM:${osmTotalCalls} | HERE:${hereTotalCalls} | DB:${CacheManager.count()}`;
             localStorage.setItem('osmTotalCalls', osmTotalCalls);
             localStorage.setItem('hereTotalCalls', hereTotalCalls);
         }
 
         function resetStats() {
-            if(confirm("Reset API counters to 0?")) {
-                osmTotalCalls = 0;
-                hereTotalCalls = 0;
-                lastServiceUsed = "-";
+            if(confirm("Reset counters and clear database?")) {
+                osmTotalCalls = 0; hereTotalCalls = 0;
+                // Clear Database
+                const keysToRemove = [];
+                for(let i=0; i<localStorage.length; i++) {
+                    if(localStorage.key(i).startsWith(CacheManager.PREFIX)) keysToRemove.push(localStorage.key(i));
+                }
+                keysToRemove.forEach(k => localStorage.removeItem(k));
                 updateDebug();
             }
         }
 
+        // --- CORE UPDATE LOGIC ---
         function updateSpeedLimit(lat, lon, heading) {
             lastFetchCoords = { lat: lat, lon: lon };
+
+            // 1. CHECK CACHE FIRST (The efficient DB lookup)
+            const cached = CacheManager.get(lat, lon);
+            if (cached) {
+                setLimitDisplay(cached.l);
+                statusMsg.textContent = "Source: Local DB";
+                cachedLookups++;
+                updateDebug(); // To update DB count visual
+                return; // Stop here, save API call
+            }
+
+            // 2. API FALLBACKS
             statusMsg.textContent = "Checking OSM...";
             osmTotalCalls++;
-            updateDebug("OSM (Chk)");
+            updateDebug();
             
             const query = `[out:json];way(around:20,${lat},${lon})["highway"];out tags;`;
             const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
@@ -298,7 +318,6 @@
 
                     if (data.elements && data.elements.length > 0) {
                         let road = data.elements.find(e => e.tags.maxspeed) || data.elements[0];
-
                         if (road.tags.maxspeed) {
                             foundLimit = parseMaxSpeed(road.tags.maxspeed);
                             source = "OSM Signage";
@@ -311,14 +330,16 @@
                     if (foundLimit) {
                         setLimitDisplay(foundLimit);
                         statusMsg.textContent = source;
-                        updateDebug("OSM");
+                        // Don't cache OSM defaults, only high quality data? 
+                        // Actually, let's cache OSM too to save bandwidth
+                        CacheManager.save(lat, lon, foundLimit);
+                        updateDebug();
                     } else {
                         if (HERE_API_KEY) {
                             fetchHereSpeedLimit(lat, lon, heading);
                         } else {
                             setLimitDisplay("?");
                             statusMsg.textContent = "No Data (OSM)";
-                            updateDebug("OSM (Fail)");
                         }
                     }
                 })
@@ -331,14 +352,11 @@
         function fetchHereSpeedLimit(lat, lon, heading) {
             statusMsg.textContent = "Checking HERE Maps...";
             hereTotalCalls++;
-            updateDebug("HERE (Chk)");
+            updateDebug();
             
             const offset = 0.0001; 
-            let lat2 = lat + offset;
-            let lon2 = lon + offset;
-
             const baseUrl = "https://routematching.hereapi.com/v8/match/routelinks";
-            const params = `apikey=${HERE_API_KEY}&waypoint0=${lat},${lon}&waypoint1=${lat2},${lon2}&mode=fastest;car&attributes=SPEED_LIMITS_FCn(*)`;
+            const params = `apikey=${HERE_API_KEY}&waypoint0=${lat},${lon}&waypoint1=${lat+offset},${lon+offset}&mode=fastest;car&attributes=SPEED_LIMITS_FCn(*)`;
 
             fetch(`${baseUrl}?${params}`)
                 .then(res => res.json())
@@ -362,22 +380,18 @@
                             const mph = Math.round(speedKmh * 0.621371);
                             setLimitDisplay(mph);
                             statusMsg.textContent = "Source: HERE Maps";
-                            updateDebug("HERE");
-                        } else {
-                            throw new Error("No limit in HERE data");
-                        }
-
+                            // SAVE TO DB FOR NEXT TIME
+                            CacheManager.save(lat, lon, mph);
+                            updateDebug();
+                        } else { throw new Error("No limit"); }
                     } catch (e) {
                         setLimitDisplay("?");
                         statusMsg.textContent = "No Data";
-                        updateDebug("HERE (Fail)");
                     }
                 })
                 .catch(err => {
-                    console.error("HERE Error:", err);
                     setLimitDisplay("?");
                     statusMsg.textContent = "Data Unavailable";
-                    updateDebug("Error");
                 });
         }
 
@@ -400,62 +414,31 @@
 
         function checkOverspeed(currentMph) {
             if (currentMph === undefined) currentMph = parseInt(currentSpeedDisplay.textContent);
-            
             let limitToUse = currentLimit || 100; 
-
-            // 1. Calculate Percentage
             let percentage = (currentMph / limitToUse) * 100;
             if(percentage > 100) percentage = 100;
 
-            // 2. Determine Color
             let barColor = "#30d158"; // Green
-            if (currentMph >= limitToUse) {
-                barColor = "#ff3b30"; // Red
-            } else if (percentage >= 90) {
-                barColor = "#ffcc00"; // Yellow
-            }
+            if (currentMph >= limitToUse) { barColor = "#ff3b30"; } 
+            else if (percentage >= 90) { barColor = "#ffcc00"; }
 
-            // 3. Update Bar
             progressFill.style.width = percentage + "%";
             progressFill.style.backgroundColor = barColor;
 
-            // 4. Update Full Screen Red Alert
-            if (currentLimit !== null && currentMph > currentLimit) {
-                document.body.classList.add('overspeed');
-            } else {
-                document.body.classList.remove('overspeed');
-            }
+            if (currentLimit !== null && currentMph > currentLimit) { document.body.classList.add('overspeed'); } 
+            else { document.body.classList.remove('overspeed'); }
         }
 
         // --- DEMO MODE ---
         let demoInterval = null;
         function runDemoMode() {
             if(demoInterval) return; 
-            
-            if(!currentLimit) {
-                setLimitDisplay(60);
-                statusMsg.textContent = "Demo Mode (60mph limit)";
-            }
-
-            let fakeSpeed = 0;
-            let goingUp = true;
-            
+            if(!currentLimit) { setLimitDisplay(60); statusMsg.textContent = "Demo Mode (60mph limit)"; }
+            let fakeSpeed = 0; let goingUp = true;
             demoInterval = setInterval(() => {
-                if(goingUp) {
-                    fakeSpeed += 2;
-                    if(fakeSpeed >= demoLimit + 10) goingUp = false;
-                } else {
-                    fakeSpeed -= 2;
-                    if(fakeSpeed <= 0) {
-                        fakeSpeed = 0;
-                        clearInterval(demoInterval);
-                        demoInterval = null;
-                        statusMsg.textContent = "Demo Ended";
-                    }
-                }
-                
-                currentSpeedDisplay.textContent = fakeSpeed;
-                checkOverspeed(fakeSpeed);
+                if(goingUp) { fakeSpeed += 2; if(fakeSpeed >= demoLimit + 10) goingUp = false; } 
+                else { fakeSpeed -= 2; if(fakeSpeed <= 0) { fakeSpeed = 0; clearInterval(demoInterval); demoInterval = null; statusMsg.textContent = "Demo Ended"; } }
+                currentSpeedDisplay.textContent = fakeSpeed; checkOverspeed(fakeSpeed);
             }, 50); 
         }
 
@@ -469,11 +452,7 @@
                     const heading = position.coords.heading;
                     const now = Date.now();
 
-                    if(speed > 1 && demoInterval) {
-                        clearInterval(demoInterval);
-                        demoInterval = null;
-                    }
-
+                    if(speed > 1 && demoInterval) { clearInterval(demoInterval); demoInterval = null; }
                     updateCurrentSpeed(speed);
 
                     const dist = getDistanceFromLatLonInMeters(lat, lon, lastFetchCoords.lat, lastFetchCoords.lon);
@@ -487,14 +466,10 @@
                         }
                     }
                 },
-                (error) => {
-                    statusMsg.textContent = "GPS Access Denied";
-                },
+                (error) => { statusMsg.textContent = "GPS Access Denied"; },
                 { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
             );
-        } else {
-            statusMsg.textContent = "Geolocation not supported.";
-        }
+        } else { statusMsg.textContent = "Geolocation not supported."; }
 
         let wakeLock = null;
         async function requestWakeLock() {
@@ -502,18 +477,13 @@
                 try {
                     wakeLock = await navigator.wakeLock.request('screen');
                     wakeMsg.classList.add('active');
-                    wakeLock.addEventListener('release', () => {
-                        wakeMsg.classList.remove('active');
-                    });
+                    wakeLock.addEventListener('release', () => { wakeMsg.classList.remove('active'); });
                 } catch (err) { console.log(err); }
             }
         }
         document.addEventListener('visibilitychange', async () => {
-            if (wakeLock !== null && document.visibilityState === 'visible') {
-                await requestWakeLock();
-            }
+            if (wakeLock !== null && document.visibilityState === 'visible') { await requestWakeLock(); }
         });
-        requestWakeLock();
 
     </script>
 </body>
