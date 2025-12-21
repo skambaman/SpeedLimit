@@ -203,4 +203,208 @@
             const dLat = deg2rad(lat2 - lat1);
             const dLon = deg2rad(lon2 - lon1);
             const a = 
-                Math.sin(
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+            const d = R * c; 
+            return d;
+        }
+
+        function deg2rad(deg) {
+            return deg * (Math.PI/180);
+        }
+
+        // --- DEBUG DISPLAY ---
+        function updateDebug(service) {
+            if(service) lastServiceUsed = service;
+            debugStats.textContent = `OSM: ${osmTotalCalls} | HERE: ${hereTotalCalls} | Last: ${lastServiceUsed}`;
+        }
+
+        // --- MAIN LOGIC ---
+        function updateSpeedLimit(lat, lon, heading) {
+            
+            lastFetchCoords = { lat: lat, lon: lon };
+            statusMsg.textContent = "Checking OSM...";
+            
+            // Increment OSM Count
+            osmTotalCalls++;
+            updateDebug("OSM (Chk)");
+            
+            const query = `[out:json];way(around:20,${lat},${lon})["highway"];out tags;`;
+            const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    let foundLimit = null;
+                    let source = "";
+
+                    if (data.elements && data.elements.length > 0) {
+                        let road = data.elements.find(e => e.tags.maxspeed) || data.elements[0];
+
+                        if (road.tags.maxspeed) {
+                            foundLimit = parseMaxSpeed(road.tags.maxspeed);
+                            source = "OSM Signage";
+                        } else if (road.tags.highway && highwayDefaults[road.tags.highway]) {
+                            foundLimit = highwayDefaults[road.tags.highway];
+                            source = `OSM Default (${road.tags.highway})`;
+                        }
+                    }
+
+                    if (foundLimit) {
+                        setLimitDisplay(foundLimit);
+                        statusMsg.textContent = source;
+                        updateDebug("OSM");
+                    } else {
+                        if (HERE_API_KEY) {
+                            fetchHereSpeedLimit(lat, lon, heading);
+                        } else {
+                            setLimitDisplay("?");
+                            statusMsg.textContent = "No Data (OSM)";
+                            updateDebug("OSM (Fail)");
+                        }
+                    }
+                })
+                .catch(err => {
+                    console.error("OSM Error:", err);
+                    if (HERE_API_KEY) fetchHereSpeedLimit(lat, lon, heading);
+                });
+        }
+
+        function fetchHereSpeedLimit(lat, lon, heading) {
+            statusMsg.textContent = "Checking HERE Maps...";
+            
+            // Increment HERE Count
+            hereTotalCalls++;
+            updateDebug("HERE (Chk)");
+            
+            const offset = 0.0001; 
+            let lat2 = lat + offset;
+            let lon2 = lon + offset;
+
+            const baseUrl = "https://routematching.hereapi.com/v8/match/routelinks";
+            const params = `apikey=${HERE_API_KEY}&waypoint0=${lat},${lon}&waypoint1=${lat2},${lon2}&mode=fastest;car&attributes=SPEED_LIMITS_FCn(*)`;
+
+            fetch(`${baseUrl}?${params}`)
+                .then(res => res.json())
+                .then(data => {
+                    try {
+                        const link = data.response.route[0].leg[0].link[0];
+                        const attributes = link.attributes;
+                        let speedKmh = 0;
+                        
+                        const keys = Object.keys(attributes);
+                        for (const key of keys) {
+                            if (key.startsWith("SPEED_LIMITS_FC") && attributes[key].length > 0) {
+                                const val = attributes[key][0];
+                                const v1 = parseInt(val.FROM_REF_SPEED_LIMIT) || 0;
+                                const v2 = parseInt(val.TO_REF_SPEED_LIMIT) || 0;
+                                speedKmh = Math.max(v1, v2);
+                                break; 
+                            }
+                        }
+
+                        if (speedKmh > 0) {
+                            const mph = Math.round(speedKmh * 0.621371);
+                            setLimitDisplay(mph);
+                            statusMsg.textContent = "Source: HERE Maps";
+                            updateDebug("HERE");
+                        } else {
+                            throw new Error("No limit in HERE data");
+                        }
+
+                    } catch (e) {
+                        setLimitDisplay("?");
+                        statusMsg.textContent = "No Data";
+                        updateDebug("HERE (Fail)");
+                    }
+                })
+                .catch(err => {
+                    console.error("HERE Error:", err);
+                    setLimitDisplay("?");
+                    statusMsg.textContent = "Data Unavailable";
+                    updateDebug("Error");
+                });
+        }
+
+        function parseMaxSpeed(speedStr) {
+            return parseInt(speedStr.toLowerCase().replace("mph", "").trim());
+        }
+
+        function setLimitDisplay(val) {
+            limitDisplay.textContent = val;
+            currentLimit = (typeof val === 'number') ? val : null;
+            checkOverspeed();
+        }
+
+        function updateCurrentSpeed(speedMs) {
+            const mph = speedMs ? Math.round(speedMs * 2.23694) : 0;
+            currentSpeedDisplay.textContent = mph;
+            checkOverspeed(mph);
+        }
+
+        function checkOverspeed(currentMph) {
+            if (currentMph === undefined) currentMph = parseInt(currentSpeedDisplay.textContent);
+            if (currentLimit !== null && currentMph > currentLimit) {
+                document.body.classList.add('overspeed');
+            } else {
+                document.body.classList.remove('overspeed');
+            }
+        }
+
+        // --- GPS WATCHER ---
+        if ("geolocation" in navigator) {
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    const acc = position.coords.accuracy;
+                    const speed = position.coords.speed;
+                    const heading = position.coords.heading;
+                    const now = Date.now();
+
+                    updateCurrentSpeed(speed);
+
+                    const dist = getDistanceFromLatLonInMeters(lat, lon, lastFetchCoords.lat, lastFetchCoords.lon);
+                    const timeElapsed = now - lastFetchTime;
+
+                    if (acc < 50) {
+                        if (firstRun || (dist > FETCH_DISTANCE_THRESHOLD && timeElapsed > MIN_FETCH_INTERVAL)) {
+                            firstRun = false;
+                            lastFetchTime = now;
+                            updateSpeedLimit(lat, lon, heading);
+                        }
+                    }
+                },
+                (error) => {
+                    statusMsg.textContent = "GPS Access Denied";
+                },
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+            );
+        } else {
+            statusMsg.textContent = "Geolocation not supported.";
+        }
+
+        // --- WAKE LOCK ---
+        let wakeLock = null;
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeMsg.classList.add('active');
+                    wakeLock.addEventListener('release', () => {
+                        wakeMsg.classList.remove('active');
+                    });
+                } catch (err) { console.log(err); }
+            }
+        }
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        });
+        requestWakeLock();
+
+    </script>
+</body>
+</html>
