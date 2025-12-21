@@ -26,18 +26,17 @@
             user-select: none;
             -webkit-user-select: none; 
             overflow: hidden; 
-            /* Smooth transition for the red flash */
             transition: background-color 0.3s ease;
         }
 
-        /* --- OVERSPEED STATE (Applied to Body) --- */
+        /* --- OVERSPEED STATE --- */
         body.overspeed {
-            background-color: #b71c1c !important; /* Deep Alert Red */
+            background-color: #b71c1c !important; 
         }
 
         /* --- SPEED LIMIT SIGN --- */
         .limit-container {
-            border: 10px solid #ff3b30; /* Default Red Border */
+            border: 10px solid #ff3b30; 
             border-radius: 50%;
             width: 220px;
             height: 220px;
@@ -54,7 +53,6 @@
             transition: border-color 0.3s ease, box-shadow 0.3s ease;
         }
 
-        /* Invert border color when screen is red so it pops */
         body.overspeed .limit-container {
             border-color: white;
             box-shadow: 0 0 50px rgba(255, 255, 255, 0.4);
@@ -88,7 +86,6 @@
             letter-spacing: 2px;
             color: #888;
             margin-bottom: 5px;
-            /* Make label lighter when background is red for contrast */
             transition: color 0.3s;
         }
         body.overspeed .current-label { color: rgba(255,255,255, 0.8); }
@@ -123,7 +120,18 @@
             color: #666;
             transition: color 0.3s;
         }
-        body.overspeed .status { color: rgba(255,255,255, 0.6); }
+        
+        /* Debug Stats Style */
+        .debug-stats {
+            font-size: 0.75rem;
+            font-family: monospace;
+            color: #888;
+            margin-top: 2px;
+            margin-bottom: 2px;
+        }
+
+        body.overspeed .status, 
+        body.overspeed .debug-stats { color: rgba(255,255,255, 0.6); }
 
         .wake-status {
             font-size: 0.7rem;
@@ -132,8 +140,6 @@
             transition: opacity 0.5s;
         }
         .wake-status.active { opacity: 1; }
-
-        /* Make green text brighter on red bg */
         body.overspeed .wake-status { color: #66ff85; }
 
     </style>
@@ -153,6 +159,7 @@
 
     <div class="footer">
         <div class="status" id="statusMsg">Waiting for GPS...</div>
+        <div class="debug-stats" id="debugStats">Calls: 0 | Service: -</div>
         <div class="wake-status" id="wakeMsg">⚡ Screen Awake Active</div>
     </div>
 
@@ -161,18 +168,27 @@
         // CONFIGURATION
         // ==========================================
         const HERE_API_KEY = "6gHvApqVJFF0SKgYUL-DK1pIuSlpm8EjDRMMVrkaH-E"; 
+        const FETCH_DISTANCE_THRESHOLD = 50; // Meters
+        const MIN_FETCH_INTERVAL = 5000; // Milliseconds
         // ==========================================
 
         const limitDisplay = document.getElementById('limitDisplay');
         const currentSpeedDisplay = document.getElementById('currentSpeedDisplay');
         const statusMsg = document.getElementById('statusMsg');
+        const debugStats = document.getElementById('debugStats');
         const wakeMsg = document.getElementById('wakeMsg');
 
         let currentLimit = null; 
+        
+        // Tracking variables
+        let lastFetchCoords = { lat: 0, lon: 0 };
         let lastFetchTime = 0;
-        const MIN_FETCH_INTERVAL = 5000; 
+        let firstRun = true;
+        
+        // Debug Counters
+        let apiTotalCalls = 0;
+        let lastServiceUsed = "-";
 
-        // UK Highway Defaults
         const highwayDefaults = {
             "motorway": 70, "motorway_link": 70,
             "trunk": 60, "primary": 60, "secondary": 60,
@@ -180,15 +196,39 @@
             "residential": 30, "living_street": 20, "service": 10
         };
 
+        // --- DISTANCE CALCULATION ---
+        function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; 
+            const dLat = deg2rad(lat2 - lat1);
+            const dLon = deg2rad(lon2 - lon1);
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2); 
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+            const d = R * c; 
+            return d;
+        }
+
+        function deg2rad(deg) {
+            return deg * (Math.PI/180);
+        }
+
+        // --- DEBUG DISPLAY ---
+        function updateDebug(service) {
+            if(service) lastServiceUsed = service;
+            debugStats.textContent = `Calls: ${apiTotalCalls} | Service: ${lastServiceUsed}`;
+        }
+
         // --- MAIN LOGIC ---
         function updateSpeedLimit(lat, lon, heading) {
-            const now = Date.now();
-            if (now - lastFetchTime < MIN_FETCH_INTERVAL) return;
-            lastFetchTime = now;
-
+            
+            lastFetchCoords = { lat: lat, lon: lon };
             statusMsg.textContent = "Checking OSM...";
             
-            // 1. Try OpenStreetMap First
+            // Increment Call Count
+            apiTotalCalls++;
+            updateDebug("OSM (Checking...)");
+            
             const query = `[out:json];way(around:20,${lat},${lon})["highway"];out tags;`;
             const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
 
@@ -213,12 +253,14 @@
                     if (foundLimit) {
                         setLimitDisplay(foundLimit);
                         statusMsg.textContent = source;
+                        updateDebug("OSM");
                     } else {
                         if (HERE_API_KEY) {
                             fetchHereSpeedLimit(lat, lon, heading);
                         } else {
                             setLimitDisplay("?");
                             statusMsg.textContent = "No Data (OSM)";
+                            updateDebug("OSM (Failed)");
                         }
                     }
                 })
@@ -228,9 +270,12 @@
                 });
         }
 
-        // --- HERE MAPS BACKUP LOGIC ---
         function fetchHereSpeedLimit(lat, lon, heading) {
             statusMsg.textContent = "Checking HERE Maps...";
+            
+            // Increment Call Count for fallback
+            apiTotalCalls++;
+            updateDebug("HERE (Checking...)");
             
             const offset = 0.0001; 
             let lat2 = lat + offset;
@@ -262,6 +307,7 @@
                             const mph = Math.round(speedKmh * 0.621371);
                             setLimitDisplay(mph);
                             statusMsg.textContent = "Source: HERE Maps";
+                            updateDebug("HERE");
                         } else {
                             throw new Error("No limit in HERE data");
                         }
@@ -269,12 +315,14 @@
                     } catch (e) {
                         setLimitDisplay("?");
                         statusMsg.textContent = "No Data";
+                        updateDebug("HERE (Failed)");
                     }
                 })
                 .catch(err => {
                     console.error("HERE Error:", err);
                     setLimitDisplay("?");
                     statusMsg.textContent = "Data Unavailable";
+                    updateDebug("Error");
                 });
         }
 
@@ -288,7 +336,6 @@
             checkOverspeed();
         }
 
-        // --- GPS & CURRENT SPEED LOGIC ---
         function updateCurrentSpeed(speedMs) {
             const mph = speedMs ? Math.round(speedMs * 2.23694) : 0;
             currentSpeedDisplay.textContent = mph;
@@ -297,8 +344,6 @@
 
         function checkOverspeed(currentMph) {
             if (currentMph === undefined) currentMph = parseInt(currentSpeedDisplay.textContent);
-            
-            // Apply class to BODY for full-screen redness
             if (currentLimit !== null && currentMph > currentLimit) {
                 document.body.classList.add('overspeed');
             } else {
@@ -306,6 +351,7 @@
             }
         }
 
+        // --- GPS WATCHER ---
         if ("geolocation" in navigator) {
             navigator.geolocation.watchPosition(
                 (position) => {
@@ -314,11 +360,19 @@
                     const acc = position.coords.accuracy;
                     const speed = position.coords.speed;
                     const heading = position.coords.heading;
+                    const now = Date.now();
 
                     updateCurrentSpeed(speed);
 
+                    const dist = getDistanceFromLatLonInMeters(lat, lon, lastFetchCoords.lat, lastFetchCoords.lon);
+                    const timeElapsed = now - lastFetchTime;
+
                     if (acc < 50) {
-                        updateSpeedLimit(lat, lon, heading);
+                        if (firstRun || (dist > FETCH_DISTANCE_THRESHOLD && timeElapsed > MIN_FETCH_INTERVAL)) {
+                            firstRun = false;
+                            lastFetchTime = now;
+                            updateSpeedLimit(lat, lon, heading);
+                        }
                     }
                 },
                 (error) => {
@@ -330,7 +384,7 @@
             statusMsg.textContent = "Geolocation not supported.";
         }
 
-        // --- WAKE LOCK LOGIC ---
+        // --- WAKE LOCK ---
         let wakeLock = null;
         async function requestWakeLock() {
             if ('wakeLock' in navigator) {
