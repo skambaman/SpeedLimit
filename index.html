@@ -341,7 +341,7 @@
                             fetchHereSpeedLimit(lat, lon, heading);
                         } else {
                             setLimitDisplay("?");
-                            statusMsg.textContent = "No Data (OSM)";
+                            statusMsg.textContent = "No Data (OSM) no API KEY";
                         }
                     }
                 })
@@ -386,12 +386,12 @@
                             updateDebug();
                         } else { throw new Error("No limit"); }
                     } catch (e) {
-                        setLimitDisplay("?");
+                        setLimitDisplay("? no data");
                         statusMsg.textContent = "No Data";
                     }
                 })
                 .catch(err => {
-                    setLimitDisplay("?");
+                    setLimitDisplay("? Data unav");
                     statusMsg.textContent = "Data Unavailable";
                 });
         }
