@@ -96,15 +96,35 @@
         .current-unit { font-size: 1.2rem; color: #888; font-weight: 600; transition: color 0.3s; }
         body.overspeed .current-unit { color: rgba(255,255,255, 0.8); }
 
+        /* --- DEBUG STATS (LEFT EDGE) --- */
+        .debug-stats {
+            position: fixed;
+            bottom: 20px;
+            left: 15px;
+            text-align: left;
+            font-size: 0.7rem;
+            font-family: monospace;
+            color: #666;
+            line-height: 1.4;
+            pointer-events: none; /* Let touches pass through to map if needed */
+        }
+
         /* --- FOOTER --- */
         .footer {
             position: absolute; bottom: 20px;
+            width: 100%;
             display: flex; flex-direction: column; align-items: center; gap: 5px;
+            pointer-events: none; /* Let clicks pass through except buttons */
         }
-        .status { font-size: 0.8rem; color: #666; transition: color 0.3s; }
-        .debug-row { display: flex; align-items: center; gap: 10px; }
-        .debug-stats { font-size: 0.75rem; font-family: monospace; color: #888; }
-        .reset-btn { font-size: 0.65rem; background: #333; color: #ccc; border: 1px solid #555; border-radius: 4px; padding: 2px 5px; cursor: pointer; }
+        
+        .status { font-size: 0.8rem; color: #666; transition: color 0.3s; margin-bottom: 5px; }
+        
+        /* Reset button stays in footer (center) but clickable */
+        .reset-btn { 
+            font-size: 0.65rem; background: #333; color: #ccc; border: 1px solid #555; 
+            border-radius: 4px; padding: 4px 8px; cursor: pointer; pointer-events: auto;
+        }
+
         body.overspeed .status, body.overspeed .debug-stats { color: rgba(255,255,255, 0.6); }
         .wake-status { font-size: 0.7rem; color: #30d158; opacity: 0; transition: opacity 0.5s; }
         .wake-status.active { opacity: 1; }
@@ -136,12 +156,16 @@
         <div class="current-unit">MPH</div>
     </div>
 
+    <div class="debug-stats" id="debugStats">
+        OSM Calls: 0<br>
+        HERE Calls: 0<br>
+        DB Hits: 0<br>
+        DB Size: 0
+    </div>
+
     <div class="footer">
         <div class="status" id="statusMsg">Waiting for GPS...</div>
-        <div class="debug-row">
-            <div class="debug-stats" id="debugStats">OSM: 0 | HERE: 0 | DB: 0</div>
-            <button class="reset-btn" onclick="resetStats()">Reset</button>
-        </div>
+        <button class="reset-btn" onclick="resetStats()">Reset Counters</button>
         <div class="wake-status" id="wakeMsg">⚡ Screen Awake Active</div>
     </div>
 
@@ -166,14 +190,13 @@
         let lastFetchTime = 0;
         let firstRun = true;
         let demoLimit = 60; 
-        let lastWarningTime = 0; // For Audio throttling
+        let lastWarningTime = 0; 
 
         // Counters
         let osmTotalCalls = parseInt(localStorage.getItem('osmTotalCalls')) || 0;
         let hereTotalCalls = parseInt(localStorage.getItem('hereTotalCalls')) || 0;
-        let cachedLookups = 0; 
+        let cachedLookups = parseInt(localStorage.getItem('cachedLookups')) || 0;
 
-        // --- AUDIO CONTEXT ---
         let audioCtx = null;
 
         const highwayDefaults = {
@@ -213,45 +236,31 @@
             }
         };
 
-        // --- SPLASH & AUDIO STARTUP ---
         function startApp() {
             splashScreen.classList.add('hidden');
             requestWakeLock();
-            
-            // Initialize AudioContext on user interaction (required by browsers)
             if (!audioCtx) {
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
                 audioCtx = new AudioContext();
             }
-            // Resume if suspended
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
+            if (audioCtx.state === 'suspended') { audioCtx.resume(); }
+            updateDebug(); // Ensure stats show immediately
         }
 
-        // --- WARNING SOUND LOGIC ---
         function playWarningSound() {
             if (!audioCtx) return;
-
-            // Simple Beep (Sine Wave)
             const oscillator = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
-
             oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note (Standard dashboard beep)
-            
-            // Volume Envelope (Attack/Decay to avoid clicking)
+            oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); 
             gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-
             oscillator.connect(gainNode);
             gainNode.connect(audioCtx.destination);
-
             oscillator.start();
             oscillator.stop(audioCtx.currentTime + 0.5);
         }
 
-        // --- DISTANCE LOGIC ---
         function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
             const R = 6371e3; 
             const dLat = deg2rad(lat2 - lat1);
@@ -263,14 +272,20 @@
         function deg2rad(deg) { return deg * (Math.PI/180); }
 
         function updateDebug() {
-            debugStats.textContent = `OSM:${osmTotalCalls} | HERE:${hereTotalCalls} | DB:${CacheManager.count()}`;
+            debugStats.innerHTML = `
+                OSM Calls: ${osmTotalCalls}<br>
+                HERE Calls: ${hereTotalCalls}<br>
+                DB Hits: ${cachedLookups}<br>
+                DB Size: ${CacheManager.count()}
+            `;
             localStorage.setItem('osmTotalCalls', osmTotalCalls);
             localStorage.setItem('hereTotalCalls', hereTotalCalls);
+            localStorage.setItem('cachedLookups', cachedLookups);
         }
 
         function resetStats() {
             if(confirm("Reset counters and clear database?")) {
-                osmTotalCalls = 0; hereTotalCalls = 0;
+                osmTotalCalls = 0; hereTotalCalls = 0; cachedLookups = 0;
                 const keysToRemove = [];
                 for(let i=0; i<localStorage.length; i++) {
                     if(localStorage.key(i).startsWith(CacheManager.PREFIX)) keysToRemove.push(localStorage.key(i));
@@ -280,7 +295,6 @@
             }
         }
 
-        // --- CORE UPDATE LOGIC ---
         function updateSpeedLimit(lat, lon, heading) {
             lastFetchCoords = { lat: lat, lon: lon };
 
@@ -414,20 +428,16 @@
 
             if (currentLimit !== null && currentMph > currentLimit) { 
                 document.body.classList.add('overspeed'); 
-                
-                // CHECK AUDIO WARNING
                 const now = Date.now();
-                if (now - lastWarningTime > 10000) { // 10 seconds (10000 ms)
+                if (now - lastWarningTime > 10000) { 
                     playWarningSound();
                     lastWarningTime = now;
                 }
-
             } else { 
                 document.body.classList.remove('overspeed'); 
             }
         }
 
-        // --- DEMO MODE ---
         let demoInterval = null;
         function runDemoMode() {
             if(demoInterval) return; 
